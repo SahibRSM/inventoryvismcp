@@ -254,7 +254,7 @@ const getAzureADToken = server.tool(
             type: "text",
             text: JSON.stringify({
               error: "Failed to obtain Azure AD token",
-              details: error.message
+              details: error instanceof Error ? error.message : String(error)
             }, null, 2),
           },
         ],
@@ -338,7 +338,7 @@ const getDynamicsToken = server.tool(
             type: "text",
             text: JSON.stringify({
               error: "Failed to obtain Dynamics token",
-              details: error.message
+              details: error instanceof Error ? error.message : String(error)
             }, null, 2),
           },
         ],
@@ -438,7 +438,7 @@ const queryInventory = server.tool(
             type: "text",
             text: JSON.stringify({
               error: "Failed to query inventory",
-              details: error.message
+              details: error instanceof Error ? error.message : String(error)
             }, null, 2),
           },
         ],
