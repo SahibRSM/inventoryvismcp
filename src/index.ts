@@ -149,11 +149,32 @@ const getYoMamaJoke = server.tool(
   }
 );
 
+// Define parameter interfaces
+interface AzureADTokenParams {
+  tenant_id: string;
+  client_id: string;
+  client_secret: string;
+  grant_type: string;
+}
+
+interface DynamicsTokenParams {
+  bearer_token: string;
+  grant_type: string;
+  fno_id: string;
+}
+
+interface InventoryQueryParams {
+  access_token: string;
+  fno_id: string;
+  product_id: string;
+  organization_id: string;
+}
+
 // Get Azure AD Token tool
 const getAzureADToken = server.tool(
   "get-azure-ad-token",
   "Get Azure AD token from Microsoft",
-  async (params) => {
+  async (params: AzureADTokenParams) => {
     const { tenant_id, client_id, client_secret, grant_type } = params;
     
     const formData = new URLSearchParams();
@@ -190,7 +211,7 @@ const getAzureADToken = server.tool(
 const getDynamicsToken = server.tool(
   "get-dynamics-token",
   "Get access token for Dynamics 365 operations",
-  async (params) => {
+  async (params: DynamicsTokenParams) => {
     const { bearer_token, grant_type, fno_id } = params;
 
     const response = await fetch(
@@ -229,7 +250,7 @@ const getDynamicsToken = server.tool(
 const queryInventory = server.tool(
   "query-inventory",
   "Query inventory from Dynamics 365",
-  async (params) => {
+  async (params: InventoryQueryParams) => {
     const { access_token, fno_id, product_id, organization_id } = params;
 
     const response = await fetch(
