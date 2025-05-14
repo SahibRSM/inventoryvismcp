@@ -39,7 +39,7 @@ interface DynamicsTokenParams {
 }
 
 interface InventoryQueryParams {
-  access_token: string;
+  access_token: string;  // This should be the Dynamics token, NOT the Azure AD token
   fno_id: string;
   product_id: string;
   organization_id: string;
@@ -108,14 +108,14 @@ const server = new McpServer({
     },
     {
       name: "query-inventory",
-      description: "Query inventory from Dynamics 365",
+      description: "Query inventory from Dynamics 365 using the Dynamics token (NOT the Azure AD token)",
       parameters: {
         type: "object",
         properties: {
-          access_token: { type: "string", description: "Dynamics 365 access token" },
+          access_token: { type: "string", description: "Dynamics 365 access token (NOT the Azure AD token)" },
           fno_id: { type: "string", description: "Finance and Operations ID" },
-          product_id: { type: "string", description: "Product ID to query" },
-          organization_id: { type: "string", description: "Organization ID" }
+          product_id: { type: "string", description: "Product ID to query (example: V0001)" },
+          organization_id: { type: "string", description: "Organization ID (example: USMF)" }
         },
         required: ["access_token", "fno_id", "product_id", "organization_id"]
       }
@@ -403,12 +403,12 @@ const getDynamicsToken = server.tool(
 // Query Inventory tool
 const queryInventory = server.tool(
   "query-inventory",
-  "Query inventory from Dynamics 365",
+  "Query inventory from Dynamics 365 using the Dynamics token (NOT the Azure AD token)",
   async (params: any) => {
     const { access_token, fno_id, product_id, organization_id } = params as InventoryQueryParams;
 
     // Use provided parameters or fall back to environment variables
-    const accessToken = access_token;
+    const accessToken = access_token;  // This should be the DYNAMICS token
     const fnoId = fno_id || config.fnoId;
     const productId = product_id;
     const organizationId = organization_id;
@@ -419,7 +419,8 @@ const queryInventory = server.tool(
           {
             type: "text",
             text: JSON.stringify({
-              error: "Missing access token. Please provide access_token.",
+              error: "Missing Dynamics access token. Please provide access_token. This should be the DYNAMICS token, not the Azure AD token.",
+              help: "You can get the Dynamics token by using the authenticate-dynamics tool first, then use the 'dynamics_token' value from the response."
             }, null, 2),
           },
         ],
@@ -604,18 +605,25 @@ const authenticateDynamics = server.tool(
           {
             type: "text",
             text: JSON.stringify({
-              azure_ad_token: aadData.access_token,
-              dynamics_token: dynamicsData.access_token,
+              authentication_flow: "Two-step authentication completed successfully",
+              azure_ad_token: {
+                token: aadData.access_token,
+                note: "This token is only used for getting the Dynamics token, not for API calls"
+              },
+              dynamics_token: {
+                token: dynamicsData.access_token,
+                note: "THIS is the token you need for inventory queries (as access_token)"
+              },
               token_type: dynamicsData.token_type,
               expires_in: dynamicsData.expires_in,
               next_steps: {
-                description: "To query inventory, use the query-inventory tool with the dynamics_token as the access_token",
+                description: "To query inventory, use the query-inventory tool with the DYNAMICS token (not the Azure AD token) as the access_token",
                 tool: "query-inventory",
                 parameters: {
-                  access_token: dynamicsData.access_token,
+                  access_token: dynamicsData.access_token,  // THIS is the correct token for inventory queries
                   fno_id: fnoId,
-                  product_id: "[Product ID to query]",
-                  organization_id: "[Organization ID to query]"
+                  product_id: "V0001",  // Example from Postman
+                  organization_id: "USMF"  // Example from Postman
                 }
               }
             }, null, 2),
