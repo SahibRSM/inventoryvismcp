@@ -2,6 +2,28 @@ import express, { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
+// Environment variables configuration
+const config = {
+  // Authentication settings
+  tenantId: process.env.TENANT_ID || "",
+  clientId: process.env.CLIENT_ID || "",
+  clientSecret: process.env.CLIENT_SECRET || "",
+  grantType: process.env.GRANT_TYPE || "client_credentials",
+  defaultScope: process.env.DEFAULT_SCOPE || "0cdb527f-a8d1-4bf8-9436-b352c68682b2/.default",
+  
+  // Dynamics 365 settings
+  fnoId: process.env.FNO_ID || "",
+  
+  // Service URLs
+  azureAuthUrl: process.env.AZURE_AUTH_URL || "https://login.microsoftonline.com",
+  dynamicsTokenUrl: process.env.DYNAMICS_TOKEN_URL || "https://securityservice.operations365.dynamics.com/token",
+  inventoryServiceUrl: process.env.INVENTORY_SERVICE_URL || "https://inventoryservice.wus-il301.gateway.prod.island.powerapps.com",
+  
+  // Server configuration
+  port: process.env.PORT || 3001,
+  serviceBaseUrl: process.env.SERVICE_BASE_URL || "",
+};
+
 const server = new McpServer({
   name: "jokesMCP",
   description: "A server that provides jokes and Dynamics 365 inventory information",
@@ -177,33 +199,67 @@ const getAzureADToken = server.tool(
   async (params: any) => {
     const { tenant_id, client_id, client_secret, grant_type } = params as AzureADTokenParams;
     
-    const formData = new URLSearchParams();
-    formData.append("client_id", client_id);
-    formData.append("client_secret", client_secret);
-    formData.append("grant_type", grant_type);
-    formData.append("scope", "0cdb527f-a8d1-4bf8-9436-b352c68682b2/.default");
-
-    const response = await fetch(
-      `https://login.microsoftonline.com/${tenant_id}/oauth2/v2.0/token`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: formData,
-      }
-    );
-
-    const data = await response.json();
+    // Use provided parameters or fall back to environment variables
+    const tenantId = tenant_id || config.tenantId;
+    const clientId = client_id || config.clientId;
+    const clientSecret = client_secret || config.clientSecret;
+    const grantType = grant_type || config.grantType;
+    const scope = config.defaultScope;
     
-    return {
-      content: [
+    if (!tenantId || !clientId || !clientSecret) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Missing credentials. Please provide tenant_id, client_id, and client_secret or set environment variables.",
+            }, null, 2),
+          },
+        ],
+      };
+    }
+    
+    const formData = new URLSearchParams();
+    formData.append("client_id", clientId);
+    formData.append("client_secret", clientSecret);
+    formData.append("grant_type", grantType);
+    formData.append("scope", scope);
+
+    try {
+      const response = await fetch(
+        `${config.azureAuthUrl}/${tenantId}/oauth2/v2.0/token`,
         {
-          type: "text",
-          text: JSON.stringify(data, null, 2),
-        },
-      ],
-    };
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Failed to obtain Azure AD token",
+              details: error.message
+            }, null, 2),
+          },
+        ],
+      };
+    }
   }
 );
 
@@ -214,35 +270,80 @@ const getDynamicsToken = server.tool(
   async (params: any) => {
     const { bearer_token, grant_type, fno_id } = params as DynamicsTokenParams;
 
-    const response = await fetch(
-      "https://securityservice.operations365.dynamics.com/token",
-      {
-        method: "POST",
-        headers: {
-          "Api-Version": "1.0",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          grant_type: grant_type,
-          client_assertion_type: "aad_app",
-          client_assertion: bearer_token,
-          scope: "https://inventoryservice.operations365.dynamics.com/.default",
-          context: fno_id,
-          context_type: "finops-env"
-        }),
-      }
-    );
-
-    const data = await response.json();
+    // Use provided parameters or fall back to environment variables
+    const bearerToken = bearer_token;
+    const grantType = grant_type || config.grantType;
+    const fnoId = fno_id || config.fnoId;
     
-    return {
-      content: [
+    if (!bearerToken) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Missing bearer token. Please provide bearer_token.",
+            }, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (!fnoId) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Missing FnO ID. Please provide fno_id or set the FNO_ID environment variable.",
+            }, null, 2),
+          },
+        ],
+      };
+    }
+
+    try {
+      const response = await fetch(
+        config.dynamicsTokenUrl,
         {
-          type: "text",
-          text: JSON.stringify(data, null, 2),
-        },
-      ],
-    };
+          method: "POST",
+          headers: {
+            "Api-Version": "1.0",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            grant_type: grantType,
+            client_assertion_type: "aad_app",
+            client_assertion: bearerToken,
+            scope: "https://inventoryservice.operations365.dynamics.com/.default",
+            context: fnoId,
+            context_type: "finops-env"
+          }),
+        }
+      );
+
+      const data = await response.json();
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Failed to obtain Dynamics token",
+              details: error.message
+            }, null, 2),
+          },
+        ],
+      };
+    }
   }
 );
 
@@ -253,37 +354,96 @@ const queryInventory = server.tool(
   async (params: any) => {
     const { access_token, fno_id, product_id, organization_id } = params as InventoryQueryParams;
 
-    const response = await fetch(
-      `https://inventoryservice.wus-il301.gateway.prod.island.powerapps.com/api/environment/${fno_id}/onhand/indexquery`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${access_token}`,
-          "Api-Version": "2.0",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          filters: {
-            ProductId: [product_id],
-            OrganizationId: [organization_id]
-          },
-          groupByValues: ["batchId"],
-          returnNegative: false,
-          queryATP: false
-        }),
-      }
-    );
-
-    const data = await response.json();
+    // Use provided parameters or fall back to environment variables
+    const accessToken = access_token;
+    const fnoId = fno_id || config.fnoId;
+    const productId = product_id;
+    const organizationId = organization_id;
     
-    return {
-      content: [
+    if (!accessToken) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Missing access token. Please provide access_token.",
+            }, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (!fnoId) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Missing FnO ID. Please provide fno_id or set the FNO_ID environment variable.",
+            }, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (!productId || !organizationId) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Missing product_id or organization_id. Both are required.",
+            }, null, 2),
+          },
+        ],
+      };
+    }
+
+    try {
+      const response = await fetch(
+        `${config.inventoryServiceUrl}/api/environment/${fnoId}/onhand/indexquery`,
         {
-          type: "text",
-          text: JSON.stringify(data, null, 2),
-        },
-      ],
-    };
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+            "Api-Version": "2.0",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            filters: {
+              ProductId: [productId],
+              OrganizationId: [organizationId]
+            },
+            groupByValues: ["batchId"],
+            returnNegative: false,
+            queryATP: false
+          }),
+        }
+      );
+
+      const data = await response.json();
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Failed to query inventory",
+              details: error.message
+            }, null, 2),
+          },
+        ],
+      };
+    }
   }
 );
 
@@ -295,8 +455,9 @@ const transports: { [sessionId: string]: SSEServerTransport } = {};
 
 app.get("/sse", async (req: Request, res: Response) => {
   // Get the full URI from the request
-  const host = req.get("host");
-  const fullUri = `https://${host}/jokes`;
+  const host = req.get("host") || "";
+  // Use configured base URL if available, otherwise build from request
+  const fullUri = config.serviceBaseUrl || `https://${host}/jokes`;
   const transport = new SSEServerTransport(fullUri, res);
   transports[transport.sessionId] = transport;
   res.on("close", () => {
@@ -316,10 +477,16 @@ app.post("/jokes", async (req: Request, res: Response) => {
 });
 
 app.get("/", (_req, res) => {
-  res.send("The Jokes and Dynamics 365 MCP server is running!");
+  res.send(`The Jokes and Dynamics 365 MCP server is running! Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
-const PORT = process.env.PORT || 3001;
+// Health check endpoint for Azure
+app.get("/health", (_req, res) => {
+  res.status(200).json({ status: "healthy", version: "1.0.0" });
+});
+
+const PORT = config.port;
 app.listen(PORT, () => {
   console.log(`✅ Server is running at http://localhost:${PORT}`);
+  console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
 });
