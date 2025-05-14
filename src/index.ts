@@ -134,6 +134,11 @@ const server = new McpServer({
         },
         required: ["tenant_id", "client_id", "client_secret", "grant_type", "fno_id"]
       }
+    },
+    {
+      name: "token-guide",
+      description: "Get clear instructions on how to authenticate and query Dynamics 365 inventory",
+      parameters: {}
     }
   ]
 });
@@ -370,8 +375,8 @@ const getDynamicsToken = server.tool(
           parameters: {
             access_token: data.access_token,
             fno_id: fnoId,
-            product_id: "[Product ID to query]",
-            organization_id: "[Organization ID to query]"
+            product_id: "V0001",  // Example from Postman
+            organization_id: "USMF"  // Example from Postman
           }
         }
       };
@@ -643,6 +648,85 @@ const authenticateDynamics = server.tool(
         ],
       };
     }
+  }
+);
+
+// Token Guide tool
+const tokenGuide = server.tool(
+  "token-guide",
+  "Get clear instructions on how to authenticate and query Dynamics 365 inventory",
+  async () => {
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            title: "Dynamics 365 Authentication and Inventory Query Guide",
+            overview: "This guide explains how to authenticate with Dynamics 365 and query inventory data correctly.",
+            authentication_flow: {
+              step1: {
+                description: "First, you need to get both an Azure AD token and a Dynamics token in one step:",
+                tool: "authenticate-dynamics",
+                parameters: {
+                  tenant_id: "your-azure-tenant-id",
+                  client_id: "your-client-id",
+                  client_secret: "your-client-secret",
+                  grant_type: "client_credentials",
+                  fno_id: "your-finance-operations-id"
+                },
+                note: "This returns TWO different tokens - only use the DYNAMICS token for inventory queries!"
+              },
+              step2: {
+                description: "The authenticate-dynamics response contains TWO tokens:",
+                response_example: {
+                  azure_ad_token: {
+                    token: "eyJ0eXAiOiJKV1QiLCJhbG...",
+                    note: "DO NOT USE THIS TOKEN for inventory queries - it's only for internal auth"
+                  },
+                  dynamics_token: {
+                    token: "eyJ0eXAiOiJKV1QiLCJhbG...",
+                    note: "⭐ USE THIS TOKEN as the access_token for inventory queries"
+                  }
+                }
+              }
+            },
+            inventory_query: {
+              description: "After authentication, use the query-inventory tool with these parameters:",
+              tool: "query-inventory",
+              parameters: {
+                access_token: "dynamics_token_from_authentication_step",  // NOT the Azure AD token!
+                fno_id: "same-fno-id-from-authentication",
+                product_id: "V0001",  // Example from Postman
+                organization_id: "USMF"  // Example from Postman
+              },
+              http_request_details: {
+                url: "https://inventoryservice.wus-il301.gateway.prod.island.powerapps.com/api/environment/your-fno-id/onhand/indexquery",
+                method: "POST",
+                headers: {
+                  "Authorization": "Bearer your-dynamics-token",
+                  "Api-Version": "2.0",
+                  "Content-Type": "application/json"
+                },
+                body: {
+                  "filters": {
+                    "ProductId": ["V0001"],
+                    "OrganizationId": ["USMF"]
+                  },
+                  "groupByValues": ["batchId"],
+                  "returnNegative": false,
+                  "queryATP": false
+                }
+              }
+            },
+            common_errors: {
+              wrong_token: "Using the Azure AD token instead of the Dynamics token for inventory queries",
+              missing_parameters: "Not providing product_id or organization_id",
+              incorrect_values: "Not using correct format for product_id (e.g., 'V0001') or organization_id (e.g., 'USMF')"
+            }
+          }, null, 4),
+        },
+      ],
+    };
   }
 );
 
