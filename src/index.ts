@@ -168,8 +168,6 @@ const config = {
   port: process.env.PORT || 3001,
   serviceBaseUrl: process.env.SERVICE_BASE_URL || "",
 };
-
-const server = new McpServer({
   name: "jokesMCP",
   description: "A server that provides jokes and Dynamics 365 inventory information",
   version: "1.0.0",
@@ -351,6 +349,100 @@ interface InventoryQueryParams {
   product_id: string;
   organization_id: string;
 }
+
+// Combined authentication for Dynamics
+interface AuthenticateDynamicsParams {
+  tenant_id: string;
+  client_id: string;
+  client_secret: string;
+  grant_type: string;
+  fno_id: string;
+}
+
+// Initialize the MCP server
+const server = new McpServer({
+  name: "jokesMCP",
+  description: "A server that provides jokes and Dynamics 365 inventory information",
+  version: "1.0.0",
+  tools: [
+    {
+      name: "get-chuck-joke",
+      description: "Get a random Chuck Norris joke",
+      parameters: {},
+    },
+    {
+      name: "get-chuck-categories",
+      description: "Get all available categories for Chuck Norris jokes",
+      parameters: {},
+    },
+    {
+      name: "get-dad-joke",
+      description: "Get a random dad joke",
+      parameters: {},
+    },
+    {
+      name: "get-yo-mama-joke",
+      description: "Get a random Yo Mama joke",
+      parameters: {},
+    },
+    {
+      name: "get-azure-ad-token",
+      description: "Get Azure AD token from Microsoft",
+      parameters: {
+        type: "object",
+        properties: {
+          tenant_id: { type: "string", description: "Azure tenant ID" },
+          client_id: { type: "string", description: "Client ID" },
+          client_secret: { type: "string", description: "Client secret" },
+          grant_type: { type: "string", description: "Grant type, typically 'client_credentials'" }
+        },
+        required: ["tenant_id", "client_id", "client_secret", "grant_type"]
+      },
+    },
+    {
+      name: "get-dynamics-token",
+      description: "Get access token for Dynamics 365 operations",
+      parameters: {
+        type: "object",
+        properties: {
+          bearer_token: { type: "string", description: "Azure AD bearer token" },
+          grant_type: { type: "string", description: "Grant type" },
+          fno_id: { type: "string", description: "Finance and Operations ID" }
+        },
+        required: ["bearer_token", "grant_type", "fno_id"]
+      },
+    },
+    {
+      name: "query-inventory",
+      description: "Query inventory from Dynamics 365",
+      parameters: {
+        type: "object",
+        properties: {
+          access_token: { type: "string", description: "Dynamics 365 access token" },
+          fno_id: { type: "string", description: "Finance and Operations ID" },
+          product_id: { type: "string", description: "Product ID to query" },
+          organization_id: { type: "string", description: "Organization ID" }
+        },
+        required: ["access_token", "fno_id", "product_id", "organization_id"]
+      }
+    },
+    {
+      name: "authenticate-dynamics",
+      description: "Complete authentication flow for Dynamics 365 (gets both Azure AD token and Dynamics token)",
+      parameters: {
+        type: "object",
+        properties: {
+          tenant_id: { type: "string", description: "Azure tenant ID" },
+          client_id: { type: "string", description: "Client ID" },
+          client_secret: { type: "string", description: "Client secret" },
+          grant_type: { type: "string", description: "Grant type, typically 'client_credentials'" },
+          fno_id: { type: "string", description: "Finance and Operations ID" }
+        },
+        required: ["tenant_id", "client_id", "client_secret", "grant_type", "fno_id"]
+      }
+    }
+  ],
+});
 
 // Get Azure AD Token tool
 const getAzureADToken = server.tool(
