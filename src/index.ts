@@ -149,7 +149,7 @@ const getYoMamaJoke = server.tool(
   }
 );
 
-// Define parameter interfaces
+// Type definitions
 interface AzureADTokenParams {
   tenant_id: string;
   client_id: string;
@@ -174,8 +174,8 @@ interface InventoryQueryParams {
 const getAzureADToken = server.tool(
   "get-azure-ad-token",
   "Get Azure AD token from Microsoft",
-  async (params: AzureADTokenParams) => {
-    const { tenant_id, client_id, client_secret, grant_type } = params;
+  async (params: any) => {
+    const { tenant_id, client_id, client_secret, grant_type } = params as AzureADTokenParams;
     
     const formData = new URLSearchParams();
     formData.append("client_id", client_id);
@@ -211,8 +211,8 @@ const getAzureADToken = server.tool(
 const getDynamicsToken = server.tool(
   "get-dynamics-token",
   "Get access token for Dynamics 365 operations",
-  async (params: DynamicsTokenParams) => {
-    const { bearer_token, grant_type, fno_id } = params;
+  async (params: any) => {
+    const { bearer_token, grant_type, fno_id } = params as DynamicsTokenParams;
 
     const response = await fetch(
       "https://securityservice.operations365.dynamics.com/token",
@@ -250,8 +250,8 @@ const getDynamicsToken = server.tool(
 const queryInventory = server.tool(
   "query-inventory",
   "Query inventory from Dynamics 365",
-  async (params: InventoryQueryParams) => {
-    const { access_token, fno_id, product_id, organization_id } = params;
+  async (params: any) => {
+    const { access_token, fno_id, product_id, organization_id } = params as InventoryQueryParams;
 
     const response = await fetch(
       `https://inventoryservice.wus-il301.gateway.prod.island.powerapps.com/api/environment/${fno_id}/onhand/indexquery`,
