@@ -1,4 +1,149 @@
-import express, { Request, Response } from "express";
+// Combined authentication for Dynamics
+interface AuthenticateDynamicsParams {
+  tenant_id: string;
+  client_id: string;
+  client_secret: string;
+  grant_type: string;
+  fno_id: string;
+}
+
+// Combined Authentication flow for Dynamics 365
+const authenticateDynamics = server.tool(
+  "authenticate-dynamics",
+  "Complete authentication flow for Dynamics 365 (gets both Azure AD token and Dynamics token)",
+  async (params: any) => {
+    const { tenant_id, client_id, client_secret, grant_type, fno_id } = params as AuthenticateDynamicsParams;
+    
+    // Use provided parameters or fall back to environment variables
+    const tenantId = tenant_id || config.tenantId;
+    const clientId = client_id || config.clientId;
+    const clientSecret = client_secret || config.clientSecret;
+    const grantType = grant_type || config.grantType;
+    const fnoId = fno_id || config.fnoId;
+    const scope = config.defaultScope;
+    
+    if (!tenantId || !clientId || !clientSecret) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Missing credentials. Please provide tenant_id, client_id, and client_secret or set environment variables.",
+            }, null, 2),
+          },
+        ],
+      };
+    }
+    
+    if (!fnoId) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Missing FnO ID. Please provide fno_id or set the FNO_ID environment variable.",
+            }, null, 2),
+          },
+        ],
+      };
+    }
+    
+    try {
+      // Step 1: Get Azure AD Token
+      const formData = new URLSearchParams();
+      formData.append("client_id", clientId);
+      formData.append("client_secret", clientSecret);
+      formData.append("grant_type", grantType);
+      formData.append("scope", scope);
+
+      const aadResponse = await fetch(
+        `${config.azureAuthUrl}/${tenantId}/oauth2/v2.0/token`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: formData,
+        }
+      );
+
+      const aadData = await aadResponse.json();
+      
+      if (!aadData.access_token) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({
+                error: "Failed to obtain Azure AD token",
+                details: aadData
+              }, null, 2),
+            },
+          ],
+        };
+      }
+      
+      // Step 2: Get Dynamics Token
+      const dynamicsResponse = await fetch(
+        config.dynamicsTokenUrl,
+        {
+          method: "POST",
+          headers: {
+            "Api-Version": "1.0",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            grant_type: grantType,
+            client_assertion_type: "aad_app",
+            client_assertion: aadData.access_token,
+            scope: "https://inventoryservice.operations365.dynamics.com/.default",
+            context: fnoId,
+            context_type: "finops-env"
+          }),
+        }
+      );
+
+      const dynamicsData = await dynamicsResponse.json();
+      
+      // Return combined results with next steps
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              azure_ad_token: aadData.access_token,
+              dynamics_token: dynamicsData.access_token,
+              token_type: dynamicsData.token_type,
+              expires_in: dynamicsData.expires_in,
+              next_steps: {
+                description: "To query inventory, use the query-inventory tool with the dynamics_token as the access_token",
+                tool: "query-inventory",
+                parameters: {
+                  access_token: dynamicsData.access_token,
+                  fno_id: fnoId,
+                  product_id: "[Product ID to query]",
+                  organization_id: "[Organization ID to query]"
+                }
+              }
+            }, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({
+              error: "Failed to complete Dynamics 365 authentication flow",
+              details: error instanceof Error ? error.message : String(error)
+            }, null, 2),
+          },
+        ],
+      };
+    }
+  }
+);import express, { Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 
@@ -88,6 +233,21 @@ const server = new McpServer({
           organization_id: { type: "string", description: "Organization ID" }
         },
         required: ["access_token", "fno_id", "product_id", "organization_id"]
+      }
+    },
+    {
+      name: "authenticate-dynamics",
+      description: "Complete authentication flow for Dynamics 365 (gets both Azure AD token and Dynamics token)",
+      parameters: {
+        type: "object",
+        properties: {
+          tenant_id: { type: "string", description: "Azure tenant ID" },
+          client_id: { type: "string", description: "Client ID" },
+          client_secret: { type: "string", description: "Client secret" },
+          grant_type: { type: "string", description: "Grant type, typically 'client_credentials'" },
+          fno_id: { type: "string", description: "Finance and Operations ID" }
+        },
+        required: ["tenant_id", "client_id", "client_secret", "grant_type", "fno_id"]
       }
     }
   ],
@@ -239,11 +399,25 @@ const getAzureADToken = server.tool(
 
       const data = await response.json();
       
+      // Add guidance for next steps
+      const responseData = {
+        ...data,
+        next_steps: {
+          description: "To get a Dynamics token, use the get-dynamics-token tool with this access_token as the bearer_token parameter",
+          tool: "get-dynamics-token",
+          parameters: {
+            bearer_token: data.access_token,
+            grant_type: grantType,
+            fno_id: config.fnoId || "[Your FnO ID]"
+          }
+        }
+      };
+      
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(data, null, 2),
+            text: JSON.stringify(responseData, null, 2),
           },
         ],
       };
@@ -323,11 +497,26 @@ const getDynamicsToken = server.tool(
 
       const data = await response.json();
       
+      // Add guidance for next steps
+      const responseData = {
+        ...data,
+        next_steps: {
+          description: "To query inventory, use the query-inventory tool with this access_token",
+          tool: "query-inventory",
+          parameters: {
+            access_token: data.access_token,
+            fno_id: fnoId,
+            product_id: "[Product ID to query]",
+            organization_id: "[Organization ID to query]"
+          }
+        }
+      };
+      
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(data, null, 2),
+            text: JSON.stringify(responseData, null, 2),
           },
         ],
       };
