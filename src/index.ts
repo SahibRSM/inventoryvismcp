@@ -1,53 +1,51 @@
 import express, { Request, Response } from "express";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"; // Changed from SSEServerTransport [cite: 28, 59]
-import { z } from "zod"; // For schema definition [cite: 19, 24, 717]
-import { CallToolResult, isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { randomUUID } from "node:crypto";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"; // [cite: 2]
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js"; // [cite: 2, 3]
+import { z } from "zod"; // [cite: 3, 4]
+import { CallToolResult, InitializeRequestSchema } from "@modelcontextprotocol/sdk/types.js"; // Changed from isInitializeRequest
+import { randomUUID } from "node:crypto"; // [cite: 4, 148]
 
-// Environment variables configuration
+// Environment variables configuration (remains the same)
 const config = {
-  tenantId: process.env.TENANT_ID || "",
-  clientId: process.env.CLIENT_ID || "",
-  clientSecret: process.env.CLIENT_SECRET || "",
-  grantType: process.env.GRANT_TYPE || "client_credentials",
-  defaultScope: process.env.DEFAULT_SCOPE || "0cdb527f-a8d1-4bf8-9436-b352c68682b2/.default",
-  fnoId: process.env.FNO_ID || "",
-  azureAuthUrl: process.env.AZURE_AUTH_URL || "https://login.microsoftonline.com",
-  dynamicsTokenUrl: process.env.DYNAMICS_TOKEN_URL || "https://securityservice.operations365.dynamics.com/token",
-  inventoryServiceUrl: process.env.INVENTORY_SERVICE_URL || "https://inventoryservice.wus-il301.gateway.prod.island.powerapps.com",
-  port: process.env.PORT || 3001,
-  serviceBaseUrl: process.env.SERVICE_BASE_URL || "", // Used for constructing the full SSE URI if needed
+  tenantId: process.env.TENANT_ID || "", // [cite: 5]
+  clientId: process.env.CLIENT_ID || "", // [cite: 5, 6]
+  clientSecret: process.env.CLIENT_SECRET || "", // [cite: 6]
+  grantType: process.env.GRANT_TYPE || "client_credentials", // [cite: 6]
+  defaultScope: process.env.DEFAULT_SCOPE || "0cdb527f-a8d1-4bf8-9436-b352c68682b2/.default", // [cite: 6]
+  fnoId: process.env.FNO_ID || "", // [cite: 6, 7]
+  azureAuthUrl: process.env.AZURE_AUTH_URL || "https://login.microsoftonline.com", // [cite: 7]
+  dynamicsTokenUrl: process.env.DYNAMICS_TOKEN_URL || "https://securityservice.operations365.dynamics.com/token", // [cite: 7]
+  inventoryServiceUrl: process.env.INVENTORY_SERVICE_URL || "https://inventoryservice.wus-il301.gateway.prod.island.powerapps.com", // [cite: 7]
+  port: process.env.PORT || 3001, // [cite: 7, 8]
+  serviceBaseUrl: process.env.SERVICE_BASE_URL || "", // [cite: 8]
 };
 
-// Initialize the MCP server
-const server = new McpServer({
+const server = new McpServer({ // [cite: 9]
   name: "inventoryMCP",
   description: "A server that provides Dynamics 365 inventory information",
   version: "1.0.0",
 });
 
-// Define Zod schemas for tool parameters for type safety and validation [cite: 19, 24, 717]
-const authenticateDynamicsParamsSchema = z.object({
+// Define Zod RAW SHAPES for tool parameters
+const authenticateDynamicsParamsRawSchema = { // This is ZodRawShape
   tenant_id: z.string().optional().describe("Azure tenant ID"),
   client_id: z.string().optional().describe("Client ID"),
   client_secret: z.string().optional().describe("Client secret"),
   grant_type: z.string().optional().describe("Grant type, typically 'client_credentials'"),
   fno_id: z.string().optional().describe("Finance and Operations ID"),
-});
+};
 
-const queryInventoryParamsSchema = z.object({
+const queryInventoryParamsRawSchema = { // This is ZodRawShape
   access_token: z.string().describe("Dynamics 365 access token"),
   fno_id: z.string().optional().describe("Finance and Operations ID"),
   product_id: z.string().describe("Product ID to query (example: V0001)"),
   organization_id: z.string().describe("Organization ID (example: USMF)"),
-});
+};
 
-// Tool: authenticate-dynamics
 server.tool(
   "authenticate-dynamics",
   "Complete authentication flow for Dynamics 365 inventory access",
-  authenticateDynamicsParamsSchema, // Use Zod schema here [cite: 24, 961, 717]
+  authenticateDynamicsParamsRawSchema, // Use the raw shape here
   async (params): Promise<CallToolResult> => {
     const tenantId = params.tenant_id || config.tenantId;
     const clientId = params.client_id || config.clientId;
@@ -57,24 +55,23 @@ server.tool(
     const scope = config.defaultScope;
 
     if (!tenantId || !clientId || !clientSecret || !fnoId) {
-      return {
+      return { // [cite: 13]
         content: [{
           type: "text",
           text: JSON.stringify({ error: "Missing required credentials for inventory access." }, null, 2),
         }],
-        isError: true, // Indicate tool error [cite: 165, 44]
+        isError: true,
       };
     }
 
     try {
-      // Step 1: Get Azure AD Token
-      const formData = new URLSearchParams();
+      const formData = new URLSearchParams(); // [cite: 14]
       formData.append("client_id", clientId);
       formData.append("client_secret", clientSecret);
       formData.append("grant_type", grantType);
-      formData.append("scope", scope);
+      formData.append("scope", scope); // [cite: 14]
 
-      const aadResponse = await fetch(
+      const aadResponse = await fetch( // [cite: 15]
         `${config.azureAuthUrl}/${tenantId}/oauth2/v2.0/token`,
         {
           method: "POST",
@@ -82,8 +79,7 @@ server.tool(
           body: formData,
         }
       );
-
-      const aadData = await aadResponse.json();
+      const aadData = await aadResponse.json(); // [cite: 16]
 
       if (!aadData.access_token) {
         return {
@@ -92,14 +88,13 @@ server.tool(
             text: JSON.stringify({
               error: "Failed to obtain Azure AD token for inventory access",
               details: aadData,
-            }, null, 2),
+            }, null, 2), // [cite: 17]
           }],
-          isError: true, // Indicate tool error [cite: 165, 44]
+          isError: true, // [cite: 17]
         };
-      }
+      } // [cite: 18]
 
-      // Step 2: Get Dynamics Token
-      const dynamicsResponse = await fetch(
+      const dynamicsResponse = await fetch( // [cite: 18]
         config.dynamicsTokenUrl,
         {
           method: "POST",
@@ -107,7 +102,7 @@ server.tool(
             "Api-Version": "1.0",
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
+          body: JSON.stringify({ // [cite: 19]
             grant_type: grantType,
             client_assertion_type: "aad_app",
             client_assertion: aadData.access_token,
@@ -115,12 +110,11 @@ server.tool(
             context: fnoId,
             context_type: "finops-env",
           }),
-        }
+        } // [cite: 20]
       );
+      const dynamicsData = await dynamicsResponse.json(); // [cite: 20]
 
-      const dynamicsData = await dynamicsResponse.json();
-
-      if (!dynamicsData.access_token) {
+      if (!dynamicsData.access_token) { // [cite: 21]
         return {
           content: [{
             type: "text",
@@ -128,31 +122,31 @@ server.tool(
               error: "Failed to obtain Dynamics token for inventory access",
               details: dynamicsData,
             }, null, 2),
-          }],
-          isError: true, // Indicate tool error [cite: 165, 44]
+          }], // [cite: 22]
+          isError: true, // [cite: 22]
         };
-      }
+      } // [cite: 23]
       
-      return {
+      return { // [cite: 23]
         content: [{
           type: "text",
           text: JSON.stringify({
             dynamics_token: dynamicsData.access_token,
             token_type: dynamicsData.token_type,
             expires_in: dynamicsData.expires_in,
-            inventory_query_example: {
+            inventory_query_example: { // [cite: 24]
               tool: "query-inventory",
               parameters: {
                 access_token: dynamicsData.access_token,
                 fno_id: fnoId,
                 product_id: "V0001",
                 organization_id: "USMF",
-              },
+              }, // [cite: 25]
             },
           }, null, 2),
         }],
       };
-    } catch (error) {
+    } catch (error) { // [cite: 26]
       return {
         content: [{
           type: "text",
@@ -161,28 +155,24 @@ server.tool(
             details: error instanceof Error ? error.message : String(error),
           }, null, 2),
         }],
-        isError: true, // Indicate tool error [cite: 165, 44]
+        isError: true, // [cite: 27]
       };
-    }
+    } // [cite: 28]
   }
 );
 
-// Tool: query-inventory
 server.tool(
   "query-inventory",
   "Query inventory from Dynamics 365",
-  queryInventoryParamsSchema, // Use Zod schema here [cite: 24, 961, 717]
+  queryInventoryParamsRawSchema, // Use the raw shape here
   async (params): Promise<CallToolResult> => {
     const { access_token, product_id, organization_id } = params;
     const fnoId = params.fno_id || config.fnoId;
 
-    // access_token, product_id, organization_id are guaranteed by Zod schema
-    // fnoId has a fallback
-
     try {
       const response = await fetch(
         `${config.inventoryServiceUrl}/api/environment/${fnoId}/onhand/indexquery`,
-        {
+        { // [cite: 29]
           method: "POST",
           headers: {
             "Authorization": `Bearer ${access_token}`,
@@ -190,7 +180,7 @@ server.tool(
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            filters: {
+            filters: { // [cite: 30]
               ProductId: [product_id],
               OrganizationId: [organization_id],
             },
@@ -198,31 +188,30 @@ server.tool(
             returnNegative: false,
             queryATP: false,
           }),
-        }
+        } // [cite: 31]
       );
+      const data = await response.json(); // [cite: 31]
 
-      const data = await response.json();
-
-      if (!response.ok) { // Check if the fetch itself was not okay
+      if (!response.ok) {
          return {
            content: [{
              type: "text",
              text: JSON.stringify({
                error: `Inventory service request failed with status: ${response.status}`,
-               details: data 
+               details: data // [cite: 32]
              }, null, 2),
            }],
-           isError: true, // Indicate tool error [cite: 165, 44]
+           isError: true, // [cite: 32]
          };
-      }
+      } // [cite: 33]
 
-      return {
+      return { // [cite: 33]
         content: [{
           type: "text",
           text: JSON.stringify(data, null, 2),
         }],
       };
-    } catch (error) {
+    } catch (error) { // [cite: 34]
       return {
         content: [{
           type: "text",
@@ -231,76 +220,71 @@ server.tool(
             details: error instanceof Error ? error.message : String(error),
           }, null, 2),
         }],
-        isError: true, // Indicate tool error [cite: 165, 44]
+        isError: true, // [cite: 35]
       };
-    }
+    } // [cite: 36]
   }
 );
 
 const app = express();
-app.use(express.json()); // Middleware to parse JSON bodies
+app.use(express.json()); // [cite: 36]
+const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {}; // [cite: 36]
 
-// Store transports by session ID for StreamableHTTPServerTransport [cite: 29]
-const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
-
-// Using StreamableHTTPServerTransport [cite: 28, 59]
-// This single endpoint handles POST for client-to-server, GET for server-to-client (SSE), and DELETE for session termination.
-app.all("/mcp", async (req: Request, res: Response) => { // Changed from /inventory to /mcp for convention [cite: 29, 33, 60]
+app.all("/mcp", async (req: Request, res: Response) => { // [cite: 38]
   try {
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     let transport: StreamableHTTPServerTransport;
 
+    // Use InitializeRequestSchema directly for the check
+    const isInitReq = InitializeRequestSchema.safeParse(req.body).success;
+
     if (sessionId && transports[sessionId]) {
-      transport = transports[sessionId]; // Reuse existing transport [cite: 29]
-    } else if ((req.method === "POST" && !sessionId && isInitializeRequest(req.body))) { // isInitializeRequest is a type guard [cite: 29]
-      // New initialization request
-      transport = new StreamableHTTPServerTransport({
-        sessionIdGenerator: () => randomUUID(), // Generate a new session ID [cite: 29]
-        onsessioninitialized: (newSessionId) => { // Store transport upon session initialization [cite: 29]
+      transport = transports[sessionId];
+    } else if ((req.method === "POST" && !sessionId && isInitReq)) {
+      transport = new StreamableHTTPServerTransport({ // [cite: 39]
+        sessionIdGenerator: () => randomUUID(),
+        onsessioninitialized: (newSessionId: string) => { // Explicitly type newSessionId
           transports[newSessionId] = transport;
           console.log(`Session initialized: ${newSessionId}`);
         },
       });
-
-      transport.onclose = () => { // Clean up transport when closed [cite: 30]
-        if (transport.sessionId && transports[transport.sessionId]) {
+      transport.onclose = () => { // [cite: 39]
+        if (transport.sessionId && transports[transport.sessionId]) { // [cite: 40]
           delete transports[transport.sessionId];
-          console.log(`Session closed and removed: ${transport.sessionId}`);
+          console.log(`Session closed and removed: ${transport.sessionId}`); // [cite: 41]
         }
       };
-      await server.connect(transport); // Connect server to the new transport
+      await server.connect(transport); // [cite: 41]
     } else {
-      // Invalid request if not initialization and no valid session ID
       res.status(400).json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "Bad Request: Valid session ID required or proper initialization." },
         id: null,
-      }); // [cite: 31]
-      return;
+      }); // [cite: 42]
+      return; // [cite: 43]
     }
-    // Handle the request using the transport (either new or existing)
-    await transport.handleRequest(req, res, req.body); // Pass req.body for POST [cite: 32]
+    await transport.handleRequest(req, res, req.body); // [cite: 43]
   } catch (error) {
-    console.error("Error handling MCP request:", error);
-    if (!res.headersSent) {
+    console.error("Error handling MCP request:", error); // [cite: 44]
+    if (!res.headersSent) { // [cite: 45]
       res.status(500).json({
         jsonrpc: "2.0",
         error: { code: -32603, message: "Internal server error" },
         id: null,
-      }); // [cite: 35]
-    }
+      }); // [cite: 45]
+    } // [cite: 46]
   }
 });
 
-const PORT = config.port;
-app.listen(PORT, () => {
+const PORT = config.port; // [cite: 46]
+app.listen(PORT, () => { // [cite: 47]
   console.log(`✅ Inventory Visibility Server (Streamable HTTP) running at http://localhost:${PORT}/mcp`);
 });
 
-process.on('SIGINT', async () => {
+process.on('SIGINT', async () => { // [cite: 48]
   console.log('Shutting down server...');
   for (const sessionId in transports) {
-    await transports[sessionId].close(); // Close all active transports
+    await transports[sessionId].close();
   }
   process.exit(0);
 });
