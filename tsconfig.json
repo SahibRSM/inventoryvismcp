@@ -1,16 +1,22 @@
 {
-    "compilerOptions": {
-      "target": "ES2020",
-      "module": "NodeNext",
-      "moduleResolution": "NodeNext",
-      "esModuleInterop": true,
-      "outDir": "./dist",
-      "rootDir": "./src",
-      "strict": true,
-      "skipLibCheck": true,
-      "forceConsistentCasingInFileNames": true,
-      "resolveJsonModule": true
-    },
-    "include": ["src/**/*"],
-    "exclude": ["node_modules", "dist"]
-  }
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true, //
+    "resolveJsonModule": true, //
+
+    // Added options:
+    "sourceMap": true, // Generates '.map' files for easier debugging in original TypeScript.
+    "declaration": true, // Generates corresponding '.d.ts' declaration files.
+    "declarationMap": true, // Generates source maps for declaration files.
+    "isolatedModules": true // Ensures each file can be transpiled independently, good for some build tools and code structure.
+  },
+  "include": ["src/**/*"], //
+  "exclude": ["node_modules", "dist"] //
+}
