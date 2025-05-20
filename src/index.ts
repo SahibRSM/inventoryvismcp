@@ -12,7 +12,7 @@ const config = {
   clientSecret: process.env.CLIENT_SECRET || "",
   grantType: process.env.GRANT_TYPE || "client_credentials",
   defaultScope: process.env.DEFAULT_SCOPE || "0cdb527f-a8d1-4bf8-9436-b352c68682b2/.default",
-  fnoId: process.env.FNO_ID || "",
+  fnoId: process.env.FNO_ID || "", // This will be the single source of truth for FNO ID
   azureAuthUrl: process.env.AZURE_AUTH_URL || "https://login.microsoftonline.com",
   dynamicsTokenUrl: process.env.DYNAMICS_TOKEN_URL || "https://securityservice.operations365.dynamics.com/token",
   inventoryServiceUrl: process.env.INVENTORY_SERVICE_URL || "https://inventoryservice.wus-il301.gateway.prod.island.powerapps.com",
@@ -93,7 +93,7 @@ async function getDynamicsAccessToken(): Promise<{ token: string; error?: undefi
           client_assertion_type: "aad_app",
           client_assertion: aadData.access_token,
           scope: "https://inventoryservice.operations365.dynamics.com/.default",
-          context: fnoId,
+          context: fnoId, // fnoId from server config used here
           context_type: "finops-env",
         }),
       }
@@ -129,36 +129,34 @@ async function getDynamicsAccessToken(): Promise<{ token: string; error?: undefi
   }
 }
 
-
 // Define Zod RAW SHAPE for the updated query-inventory tool parameters
 const queryInventoryParamsRawSchema = {
-  // access_token is no longer needed here, it will be handled internally
-  fno_id: z.string().optional().describe("Finance and Operations ID (optional, uses server default if not provided)"),
+  // access_token is handled internally
+  // fno_id is no longer a parameter; config.fnoId will be used exclusively.
   product_id: z.string().describe("Product ID to query (example: V0001)"),
   organization_id: z.string().describe("Organization ID (example: USMF)"),
 };
 
-// Tool: query-inventory (now handles its own authentication)
+// Tool: query-inventory (now uses server-configured fno_id exclusively)
 server.tool(
   "query-inventory",
-  "Queries inventory from Dynamics 365, handling authentication automatically.",
+  "Queries inventory from Dynamics 365 using the server's configured F&O environment.",
   queryInventoryParamsRawSchema,
   async (params): Promise<CallToolResult> => {
-    // Get access token (handles caching and re-authentication)
     const authResult = await getDynamicsAccessToken();
     if (authResult.error) {
-      return authResult.error; // Return auth error if any
+      return authResult.error;
     }
     const accessToken = authResult.token;
 
     const { product_id, organization_id } = params;
-    const fnoIdToUse = params.fno_id || config.fnoId;
+    const fnoIdToUse = config.fnoId; // Always use the server's configured FNO ID
 
-    if (!fnoIdToUse) {
+    if (!fnoIdToUse) { // Checks if the server has fnoId configured
          return {
            content: [{
              type: "text",
-             text: JSON.stringify({ error: "FNO ID is missing. Configure it in server environment or provide as parameter." }, null, 2),
+             text: JSON.stringify({ error: "FNO ID is not configured on the server." }, null, 2),
            }],
            isError: true,
          };
