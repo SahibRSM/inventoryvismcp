@@ -1,7 +1,7 @@
 {
-  "name": "jokes-sse",
+  "name": "inventory-vis",
   "version": "1.0.0",
-  "description": "Jokes MCP with SSE",
+  "description": "Inventory Visibility MCP",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -10,7 +10,7 @@
     "dev": "ts-node-esm src/index.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.9.0",
+    "@modelcontextprotocol/sdk": "^1.11.4",
     "express": "^5.1.0",
     "zod": "^3.24.2"
   },
